@@ -8,12 +8,13 @@ import (
     "os"
     "time"
 
+	"github.com/LekhanJ/load-balancer/internal/algorithms"
 	"github.com/LekhanJ/load-balancer/internal/balancer"
 )
 
 func main() {
 	var config balancer.Config
-	var lb balancer.LoadBalancer
+	lb := balancer.LoadBalancer{Strategy: &algorithms.RoundRobin{}}
 	var servers []*balancer.Server
 
 	file, err := os.Open("config.json")
@@ -33,7 +34,7 @@ func main() {
 			log.Fatal(err)
 		}
 
-		servers = append(servers, &Server{
+		servers = append(servers, &balancer.Server{
 			URL: parsedURL,
 		})
 	}
@@ -44,11 +45,11 @@ func main() {
 	}
 
 	for _, server := range servers {
-		go healthCheck(server, interval)
+		go balancer.HealthCheck(server, interval)
 	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		server := lb.getNextServer(servers)
+		server := lb.GetNextServer(servers)
 
 		if server == nil {
 			http.Error(w, "No healthy server available", http.StatusServiceUnavailable)

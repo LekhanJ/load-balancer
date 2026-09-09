@@ -1,4 +1,4 @@
-package internal
+package balancer
 
 import (
 	"net/http/httputil"
@@ -14,4 +14,16 @@ type Server struct {
 
 func (s *Server) ReverseProxy() *httputil.ReverseProxy {
 	return httputil.NewSingleHostReverseProxy(s.URL)
+}
+
+func (s *Server) Healthy() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.IsHealthy
+}
+
+func (s *Server) SetHealthy(healthy bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.IsHealthy = healthy
 }

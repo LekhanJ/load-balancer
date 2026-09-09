@@ -1,4 +1,4 @@
-package internal
+package balancer
 
 type Config struct {
 	Port string `json:"port"`

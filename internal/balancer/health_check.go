@@ -1,4 +1,4 @@
-package internal
+package balancer
 
 import (
 	"fmt"
@@ -6,21 +6,20 @@ import (
 	"time"
 )
 
-func healthCheck(s *Server, interval time.Duration) {
+func HealthCheck(s *Server, interval time.Duration) {
     for range time.Tick(interval) {
         res, err := http.Head(s.URL.String())
-
-        s.mu.Lock()
+ 
         if err != nil {
-            s.IsHealthy = false
+            s.SetHealthy(false)
             fmt.Printf("%s is down\n", s.URL)
         } else {
-            s.IsHealthy = res.StatusCode == http.StatusOK
-
-            if !s.IsHealthy {
+            healthy := res.StatusCode == http.StatusOK
+            s.SetHealthy(healthy)
+ 
+            if !healthy {
                 fmt.Printf("%s is down\n", s.URL)
             }
         }
-        s.mu.Unlock()
     }
 }
