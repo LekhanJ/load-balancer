@@ -9,7 +9,8 @@ import (
 type Server struct {
 	URL *url.URL
 	IsHealthy bool
-	weight int8
+	Weight int8
+	CurrWeight int8
 	mu sync.Mutex
 }
 

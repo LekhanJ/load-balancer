@@ -1,14 +1,13 @@
 package main
 
 import (
-    "encoding/json"
-    "log"
-    "net/http"
-    "net/url"
-    "os"
-    "time"
+	"encoding/json"
+	"log"
 	"math/rand/v2"
-	"maps"
+	"net/http"
+	"net/url"
+	"os"
+	"time"
 
 	"github.com/LekhanJ/load-balancer/internal/algorithms"
 	"github.com/LekhanJ/load-balancer/internal/balancer"
@@ -16,7 +15,7 @@ import (
 
 func main() {
 	var config balancer.Config
-	lb := balancer.LoadBalancer{Strategy: &algorithms.RoundRobin{}}
+	lb := balancer.LoadBalancer{Strategy: &algorithms.WeightedRoundRobin{}}
 	var servers []*balancer.Server
 	set := make(map[int]struct{})
 
@@ -39,7 +38,7 @@ func main() {
 
 		servers = append(servers, &balancer.Server{
 			URL: parsedURL,
-			weight: int8(GetRandomWeight(&set, 5)),
+			Weight: int8(GetRandomWeight(&set, len(config.Servers))),
 		})
 	}
 
@@ -52,6 +51,8 @@ func main() {
 		go balancer.HealthCheck(server, interval)
 	}
 
+	pool := balancer.NewProxyPool()
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		server := lb.GetNextServer(servers)
 
@@ -61,7 +62,7 @@ func main() {
 		}
 
 		w.Header().Add("X-Forwarded-Server", server.URL.String())
-		server.ReverseProxy().ServeHTTP(w, r)
+		pool.Get(server).ServeHTTP(w, r)
 	})
 
 	log.Println("Starting load balancer on port", config.Port)
@@ -73,13 +74,11 @@ func main() {
 }
 
 func GetRandomWeight(set *map[int]struct{}, limit int) int {
-	num := rand.IntN(limit+1)
-	val, ok := set[num]
-
-	while !ok {
-		num = rand.IntN(limit+1)
+	for {
+		num := rand.IntN(limit) + 1
+		if _, exists := (*set)[num]; !exists {
+			(*set)[num] = struct{}{}
+			return num
+		}
 	}
-
-	set[num] = sturct{}	
-	return num
 }
