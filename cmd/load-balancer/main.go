@@ -7,6 +7,8 @@ import (
     "net/url"
     "os"
     "time"
+	"math/rand/v2"
+	"maps"
 
 	"github.com/LekhanJ/load-balancer/internal/algorithms"
 	"github.com/LekhanJ/load-balancer/internal/balancer"
@@ -16,6 +18,7 @@ func main() {
 	var config balancer.Config
 	lb := balancer.LoadBalancer{Strategy: &algorithms.RoundRobin{}}
 	var servers []*balancer.Server
+	set := make(map[int]struct{})
 
 	file, err := os.Open("config.json")
 	if err != nil {
@@ -36,6 +39,7 @@ func main() {
 
 		servers = append(servers, &balancer.Server{
 			URL: parsedURL,
+			weight: int8(GetRandomWeight(&set, 5)),
 		})
 	}
 
@@ -66,4 +70,16 @@ func main() {
 	if err != nil {
 			log.Fatalf("Error starting load balancer: %s\n", err.Error())
 	}
+}
+
+func GetRandomWeight(set *map[int]struct{}, limit int) int {
+	num := rand.IntN(limit+1)
+	val, ok := set[num]
+
+	while !ok {
+		num = rand.IntN(limit+1)
+	}
+
+	set[num] = sturct{}	
+	return num
 }
