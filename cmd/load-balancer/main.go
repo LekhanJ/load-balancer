@@ -15,7 +15,7 @@ import (
 
 func main() {
 	var config balancer.Config
-	lb := balancer.LoadBalancer{Strategy: &algorithms.WeightedRoundRobin{}}
+	lb := balancer.LoadBalancer{Strategy: &algorithms.LeastConnections{}}
 	var servers []*balancer.Server
 	set := make(map[int]struct{})
 
@@ -60,6 +60,9 @@ func main() {
 			http.Error(w, "No healthy server available", http.StatusServiceUnavailable)
 			return
 		}
+
+		server.IncrementConnections()
+    	defer server.DecrementConnections()
 
 		w.Header().Add("X-Forwarded-Server", server.URL.String())
 		pool.Get(server).ServeHTTP(w, r)
