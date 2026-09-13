@@ -1,12 +1,12 @@
 # Load Balancer in Go
 
-A simple HTTP load balancer built with **Go**, using **Python backend servers**.
+A simple HTTP load balancer built with **Go**, using **Python backend servers** for local testing.
 
-This project is based on the article [Building a Simple Load Balancer in Go](https://dev.to/vivekalhat/building-a-simple-load-balancer-in-go-70d).
+This project was built to learn how load balancers work under the hood — reverse proxying, health checks, and the tradeoffs between different load-balancing algorithms.
 
 ## Overview
 
-The load balancer receives HTTP requests and forwards them to healthy backend servers. Load-balancing strategies are implemented behind a common `Algorithm` interface, so the distribution logic can be swapped out independently of the proxying and health-check machinery. The binary currently starts up with **Least Connections** as its active strategy.
+The load balancer receives HTTP requests and forwards them to healthy backend servers. Load-balancing strategies are implemented behind a common `Algorithm` interface, so the distribution logic is fully decoupled from the proxying and health-check machinery. Which strategy runs is chosen via `config.json` — no code changes needed to switch algorithms.
 
 ```text
 Client
@@ -29,31 +29,31 @@ Go Load Balancer (:8081)
 
 ```text
 cmd/load-balancer/    Entry point (main.go) and config.json
-internal/balancer/     Server model, config struct, health checks, proxy pooling
-internal/algorithms/   Load-balancing strategies (Algorithm implementations)
-server/server.py       Minimal Python backend used for local testing
+internal/balancer/    Server model, config struct, health checks, proxy pooling
+internal/algorithms/  Load-balancing strategies (Algorithm implementations)
+server/server.py      Minimal Python backend used for local testing
 ```
 
 ## Features
 
-* Pluggable load-balancing strategies via a shared `Algorithm` interface
-* **Least Connections** — routes to the healthy server with the fewest active connections (used by default in `main.go`)
+* Pluggable load-balancing strategies via a shared `Algorithm` interface, selected in `config.json`
 * **Round Robin** — cycles through healthy servers in order
-* **Weighted Round Robin** — favors servers with a higher assigned weight
-* **IP Hash** — scaffolded (`internal/algorithms/ip_hash.go`) but not yet implemented
-* Per-server active-connection tracking, used by the Least Connections strategy
-* Periodic backend health checks, with automatic skipping of unhealthy servers
-* Reverse-proxy connection pooling (`ProxyPool`) so each server reuses a single `httputil.ReverseProxy`
-* Simple configuration through JSON
+* **Weighted Round Robin** — a smooth weighted round-robin: each server accumulates its weight every round, the highest accumulator is chosen, then reduced by the total weight. Weights are randomly assigned (a unique value from 1 to the number of servers) rather than derived from real server metrics like CPU or memory
+* **Least Connections** — routes to the healthy server with the fewest active connections, tracked via a mutex-guarded counter on each server
+* **IP Hash** — hashes a routing key (the client IP, or `X-Forwarded-For`/`X-Real-IP` if present) with FNV-1a and mods by the number of currently healthy servers, so the same client sticks to the same backend as long as the healthy server count doesn't change
+* Periodic backend health checks (HTTP HEAD on an interval), with automatic skipping of unhealthy servers
+* Reverse-proxy connection pooling (`ProxyPool`) — one `httputil.ReverseProxy` is built per server and reused, instead of rebuilding it on every request
+* `X-Forwarded-Server` response header naming which backend handled each request
 
 ## Configuration
 
-The backend servers and load balancer port are configured in `cmd/load-balancer/config.json`:
+Everything is configured in `cmd/load-balancer/config.json`:
 
 ```json
 {
   "port": ":8081",
   "healthCheckInterval": "2s",
+  "algorithm": "weighted-round-robin",
   "servers": [
     "http://localhost:5001",
     "http://localhost:5002",
@@ -64,7 +64,7 @@ The backend servers and load balancer port are configured in `cmd/load-balancer/
 }
 ```
 
-Note: the active strategy (currently `LeastConnections`) is set in `cmd/load-balancer/main.go`, not in `config.json` — see [Future Improvements](#future-improvements).
+`algorithm` accepts one of: `round-robin`, `weighted-round-robin`, `least-connections`, `ip-hash`. An unrecognized value causes the load balancer to exit at startup.
 
 ## Running the Project
 
@@ -119,23 +119,33 @@ Each response also includes an `X-Forwarded-Server` header naming the backend th
 
 ## How It Works
 
-1. The load balancer reads the backend server configuration and assigns each server a randomized weight (used by the weighted strategy).
-2. It starts a goroutine per server that periodically checks whether that backend is healthy.
-3. For every incoming request, the active `Algorithm` selects the next healthy server.
-4. The request is forwarded through a pooled `httputil.ReverseProxy` for that server, with active-connection counts incremented/decremented around the call.
-5. If no healthy servers are available, it returns `503 Service Unavailable`.
+1. The load balancer reads `config.json` and constructs the selected `Algorithm`.
+2. Each configured server URL becomes a `Server`, assigned a random unique weight (1 to the number of servers) and marked healthy by default.
+3. A goroutine is started per server, periodically sending an HTTP HEAD request and marking the server unhealthy if it fails or doesn't return `200`.
+4. For every incoming request, the client's routing key is resolved (`X-Forwarded-For` → `X-Real-IP` → `RemoteAddr`), and the active `Algorithm` selects the next healthy server using that key (Round Robin and Least Connections ignore it; IP Hash uses it).
+5. The request is forwarded through a pooled `httputil.ReverseProxy` for that server, with the server's active-connection count incremented before the call and decremented after, via `defer`.
+6. If no healthy servers are available, the load balancer returns `503 Service Unavailable`.
 
 ## Learning Goals
 
-This project is intended to understand:
+This project was built to understand:
 
-* HTTP request forwarding
-* Reverse proxies
-* Load-balancing strategies (round-robin, weighted round-robin, least connections, IP hash)
-* Health checks
-* Goroutines and concurrency
-* Mutexes and shared state
-* Basic Go networking
+* HTTP request forwarding and reverse proxies
+* Load-balancing strategies — round robin, weighted round robin, least connections, IP hash — and the tradeoffs between them
+* Interface-based design for swapping algorithms without touching the proxying/health-check code
+* Health checks running as independent goroutines
+* Goroutines, concurrency, and protecting shared state with mutexes
+* Basic Go networking (`net/http`, `net/http/httputil`)
+
+## Known Limitations
+
+This is a learning project, not a production load balancer. Some deliberate simplifications:
+
+* Weighted Round Robin's weights are randomly assigned at startup, not based on real server capacity or load
+* IP Hash uses plain modulo hashing — adding or removing a server reshuffles a large portion of client-to-server mappings, unlike consistent hashing
+* `X-Forwarded-For` / `X-Real-IP` headers are trusted unconditionally; there's no allowlist of trusted upstream proxies, so a client could spoof its own routing key
+* No automated test suite
+* No TLS/HTTPS, graceful shutdown, or metrics/observability endpoints
 
 ## License
 
