@@ -4,7 +4,7 @@ import "github.com/LekhanJ/load-balancer/internal/balancer"
 
 type LeastConnections struct{}
 
-func (l *LeastConnections) Next(servers []*balancer.Server) *balancer.Server {
+func (l *LeastConnections) Next(servers []*balancer.Server, key string) *balancer.Server {
 	var chosen *balancer.Server
 
     for _, s := range servers {

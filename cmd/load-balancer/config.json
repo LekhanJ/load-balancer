@@ -1,6 +1,7 @@
 {
   "port": ":8081",
   "healthCheckInterval": "2s",
+  "algorithm": "weighted-round-robin",
   "servers": [
     "http://localhost:5001",
     "http://localhost:5002",

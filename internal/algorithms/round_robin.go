@@ -11,7 +11,7 @@ type RoundRobin struct {
 	mu      sync.Mutex
 }
 
-func (r *RoundRobin) Next(servers []*balancer.Server) *balancer.Server {
+func (r *RoundRobin) Next(servers []*balancer.Server, key string) *balancer.Server {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
